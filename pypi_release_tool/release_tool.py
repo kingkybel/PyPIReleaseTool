@@ -431,7 +431,7 @@ class PyPIReleaseTool:
             content = toml_file.read_text()
             content = re.sub(
                 r"^(\s*)version\s*=\s*[\"\'][^\"\']*[\"\']",
-                rf"\1version = \"{new_version}\"",
+                f"\\1version = \"{new_version}\"",
                 content,
                 flags=re.MULTILINE,
             )
