@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kingkybel-pypi-release-tool"
+dynamic = ["version"]
+description = "Automated release workflow for building and publishing Python packages to PyPI"
+readme = "README.md"
+license = "GPL-2.0-only"
+requires-python = ">=3.8"
+authors = [
+    {name = "Dieter J Kybelksties", email = "github@kybelksties.com"}
+]
+maintainers = [
+    {name = "Dieter J Kybelksties", email = "github@kybelksties.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+keywords = ["pypi", "release", "automation", "packaging", "twine"]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest", "black", "mypy"]
+build = ["build", "twine"]
+
+[project.scripts]
+pypi-release-tool = "pypi_release_tool.release_tool:main"
+
+[project.urls]
+Homepage = "https://github.com/kingkybel/PyPIReleaseTool"
+Documentation = "https://github.com/kingkybel/PyPIReleaseTool#readme"
+Repository = "https://github.com/kingkybel/PyPIReleaseTool"
+Issues = "https://github.com/kingkybel/PyPIReleaseTool/issues"
+
+[tool.setuptools]
+zip-safe = false
+include-package-data = true
+
+[tool.setuptools.packages.find]
+exclude = ["test*", "tools*", "docs*", "examples*"]
+
+[tool.setuptools.dynamic.version]
+attr = "pypi_release_tool.__version__"
+
+[tool.black]
+line-length = 120
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312', 'py313', 'py314']
+extend-exclude = '''
+/(
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | __pycache__
+  | \.cache
+  | \.pytest_cache
+)/
+'''
+
+[tool.pytest]
+minversion = "6.0"
+addopts = ["-ra", "-q"]
+testpaths = [
+    "test"
+]
+python_files = ["test_*.py"]
+python_classes = ["*Tests"]
+python_functions = ["test_*"]
