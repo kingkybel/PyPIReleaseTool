@@ -87,10 +87,24 @@ PyPIReleaseTool/
 
 - Python 3.8+
 - Git configured with push access
-- Twine credentials configured for upload (`TWINE_USERNAME`/`TWINE_PASSWORD`)
+- Twine credentials in `~/.secrets` using `TWINE_USERNAME`/`TWINE_PASSWORD`, or interactive token entry at upload time
+
+## PyPI Credentials
+
+The Python release workflow (`release_to_pypi.py`) looks for Twine credentials in `~/.secrets` first.
+
+Example:
+
+```bash
+export TWINE_USERNAME="__token__"
+export TWINE_PASSWORD="pypi-AgENdGVzdC5weXBpLm9yZwIk..."
+```
+
+Behavior:
+- If both `TWINE_USERNAME` and `TWINE_PASSWORD` are found in `~/.secrets`, they are used automatically.
+- If one or both are missing, a warning is shown and you are prompted for the PyPI token/password securely.
 
 ## Notes
 
 - The tool expects a valid `pyproject.toml` and package `__init__.py` with a `__version__` field.
 - The default workflow assumes `main` as the primary git branch.
-- Uploads target production PyPI by default in the Python workflow; use `release.sh` for TestPyPI-first publishing.

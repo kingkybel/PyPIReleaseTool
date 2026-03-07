@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import getpass
 import json
 import logging
 import os
@@ -74,18 +75,19 @@ class PyPIReleaseTool:
         logging.info(message)
 
     @staticmethod
-    def run_command(cmd, cwd=None, check=True, capture_output=False):
+    def run_command(cmd, cwd=None, check=True, capture_output=False, env=None):
         """Run a command and return result status or captured stdout.
 
         :param cmd: Command and arguments to execute.
         :param cwd: Optional working directory for the command.
         :param check: Whether to raise when the command exits non-zero.
         :param capture_output: Whether to return captured standard output.
+        :param env: Optional environment variables for the child process.
         :return: Command success status or stripped stdout text.
         :raises subprocess.CalledProcessError: If command fails and `check` is True.
         """
         try:
-            result = subprocess.run(cmd, cwd=cwd, check=check, capture_output=capture_output, text=True)
+            result = subprocess.run(cmd, cwd=cwd, check=check, capture_output=capture_output, text=True, env=env)
             if capture_output:
                 return result.stdout.strip()
             return result.returncode == 0
@@ -93,6 +95,61 @@ class PyPIReleaseTool:
             if check:
                 raise
             return False
+
+    @staticmethod
+    def _load_twine_credentials_from_secrets() -> tuple[str | None, str | None]:
+        """Read TWINE_USERNAME and TWINE_PASSWORD from ~/.secrets when available.
+
+        :return: Tuple of (username, password) values or None when not found.
+        """
+        secrets_path = Path.home() / ".secrets"
+        if not secrets_path.exists():
+            return None, None
+
+        username = None
+        password = None
+        for raw_line in secrets_path.read_text().splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export ") :].strip()
+
+            match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$", line)
+            if not match:
+                continue
+
+            key = match.group(1)
+            value = match.group(2).strip()
+            if len(value) >= 2 and ((value[0] == value[-1] == '"') or (value[0] == value[-1] == "'")):
+                value = value[1:-1]
+
+            if key == "TWINE_USERNAME":
+                username = value
+            elif key == "TWINE_PASSWORD":
+                password = value
+
+        return username, password
+
+    def _resolve_twine_credentials(self) -> tuple[str, str]:
+        """Resolve Twine credentials, preferring ~/.secrets, then prompt for missing password.
+
+        :return: Tuple of (username, password).
+        """
+        secrets_username, secrets_password = self._load_twine_credentials_from_secrets()
+        if secrets_username and secrets_password:
+            return secrets_username, secrets_password
+
+        username = secrets_username or os.environ.get("TWINE_USERNAME") or "__token__"
+        self.log(
+            "WARNING: TWINE_USERNAME and/or TWINE_PASSWORD not found in ~/.secrets. "
+            "Prompting for PyPI token/password."
+        )
+        password = getpass.getpass("Enter PyPI token/password: ").strip()
+        if not password:
+            raise ValueError("PyPI token/password is required for upload")
+
+        return username, password
 
     @staticmethod
     def get_version_components(version: str):
@@ -353,12 +410,12 @@ class PyPIReleaseTool:
         self.log("Ensuring __init__.py has full functionality...")
 
         package_path = Path(self.package_dir)
-        init_file = package_path / "__init__.py"
+        init_file = package_path / PyPIReleaseTool.MODULE_INIT_FILE
 
         if not package_path.exists() or not package_path.is_dir():
             raise FileNotFoundError(f"Package directory {self.package_dir} not found")
 
-        py_files = [f for f in package_path.glob("*.py") if f.name != "__init__.py"]
+        py_files = [f for f in package_path.glob("*.py") if f.name != {PyPIReleaseTool.MODULE_INIT_FILE}]
         imports = [f"from .{py_file.stem} import *" for py_file in py_files]
 
         current_version = "0.1.0"
@@ -369,7 +426,7 @@ class PyPIReleaseTool:
 
         content = "\n".join(imports) + f"\n\n__version__ = \"{current_version}\"\n"
         init_file.write_text(content)
-        self.log("__init__.py updated with full functionality")
+        self.log(f"{PyPIReleaseTool.MODULE_INIT_FILE} updated with full functionality")
 
     def get_current_version(self) -> str:
         """Read the current package version from package `__init__.py`.
@@ -378,13 +435,13 @@ class PyPIReleaseTool:
         :raises FileNotFoundError: If package `__init__.py` is missing.
         :raises ValueError: If version assignment cannot be extracted.
         """
-        init_file = Path(self.package_dir) / "__init__.py"
+        init_file = Path(self.package_dir) / PyPIReleaseTool.MODULE_INIT_FILE
         if not init_file.exists():
-            raise FileNotFoundError(f"Cannot find {self.package_dir}/__init__.py")
+            raise FileNotFoundError(f"Cannot find {init_file}")
 
         match = re.search(r"__version__\s*=\s*[\"\']([^\"\']+)[\"\']", init_file.read_text())
         if not match:
-            raise ValueError(f"Could not extract version from {self.package_dir}/__init__.py")
+            raise ValueError(f"Could not extract version from {init_file}")
         return match.group(1)
 
     @staticmethod
@@ -420,7 +477,7 @@ class PyPIReleaseTool:
         :raises FileNotFoundError: If package `__init__.py` does not exist.
         :raises OSError: If file read/write operations fail.
         """
-        init_file = Path(self.package_dir) / "__init__.py"
+        init_file = Path(self.package_dir) / PyPIReleaseTool.MODULE_INIT_FILE
 
         content = init_file.read_text()
         content = re.sub(r"__version__\s*=\s*[\"\'][^\"\']*[\"\']", f'__version__ = "{new_version}"', content)
@@ -462,8 +519,12 @@ class PyPIReleaseTool:
 
         self.log("Uploading to PyPI...")
         assert self.temp_venv_path is not None
+        twine_username, twine_password = self._resolve_twine_credentials()
+        twine_env = os.environ.copy()
+        twine_env["TWINE_USERNAME"] = twine_username
+        twine_env["TWINE_PASSWORD"] = twine_password
         venv_twine = str(self.temp_venv_path / "bin" / "twine")
-        self.run_command([venv_twine, "upload", "dist/*"])
+        self.run_command([venv_twine, "upload", "dist/*"], env=twine_env)
         self.log(f"Successfully released {package_name} version {version} to PyPI!")
 
     def initialize_project_context(self) -> None:
@@ -558,7 +619,7 @@ class PyPIReleaseTool:
         :raises ValueError: If metadata cannot be updated correctly.
         """
         self.ensure_full_functionality()
-        self.log(f"Updating version in {self.package_dir}/__init__.py...")
+        self.log(f"Updating version in {self.package_dir}/{PyPIReleaseTool.MODULE_INIT_FILE}...")
         self.update_version(new_version)
 
     def commit_and_push_changes(self) -> None:
