@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import getpass
 import json
 import logging
 import os
@@ -74,18 +75,19 @@ class PyPIReleaseTool:
         logging.info(message)
 
     @staticmethod
-    def run_command(cmd, cwd=None, check=True, capture_output=False):
+    def run_command(cmd, cwd=None, check=True, capture_output=False, env=None):
         """Run a command and return result status or captured stdout.
 
         :param cmd: Command and arguments to execute.
         :param cwd: Optional working directory for the command.
         :param check: Whether to raise when the command exits non-zero.
         :param capture_output: Whether to return captured standard output.
+        :param env: Optional environment variables for the child process.
         :return: Command success status or stripped stdout text.
         :raises subprocess.CalledProcessError: If command fails and `check` is True.
         """
         try:
-            result = subprocess.run(cmd, cwd=cwd, check=check, capture_output=capture_output, text=True)
+            result = subprocess.run(cmd, cwd=cwd, check=check, capture_output=capture_output, text=True, env=env)
             if capture_output:
                 return result.stdout.strip()
             return result.returncode == 0
@@ -93,6 +95,61 @@ class PyPIReleaseTool:
             if check:
                 raise
             return False
+
+    @staticmethod
+    def _load_twine_credentials_from_secrets() -> tuple[str | None, str | None]:
+        """Read TWINE_USERNAME and TWINE_PASSWORD from ~/.secrets when available.
+
+        :return: Tuple of (username, password) values or None when not found.
+        """
+        secrets_path = Path.home() / ".secrets"
+        if not secrets_path.exists():
+            return None, None
+
+        username = None
+        password = None
+        for raw_line in secrets_path.read_text().splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export ") :].strip()
+
+            match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$", line)
+            if not match:
+                continue
+
+            key = match.group(1)
+            value = match.group(2).strip()
+            if len(value) >= 2 and ((value[0] == value[-1] == '"') or (value[0] == value[-1] == "'")):
+                value = value[1:-1]
+
+            if key == "TWINE_USERNAME":
+                username = value
+            elif key == "TWINE_PASSWORD":
+                password = value
+
+        return username, password
+
+    def _resolve_twine_credentials(self) -> tuple[str, str]:
+        """Resolve Twine credentials, preferring ~/.secrets, then prompt for missing password.
+
+        :return: Tuple of (username, password).
+        """
+        secrets_username, secrets_password = self._load_twine_credentials_from_secrets()
+        if secrets_username and secrets_password:
+            return secrets_username, secrets_password
+
+        username = secrets_username or os.environ.get("TWINE_USERNAME") or "__token__"
+        self.log(
+            "WARNING: TWINE_USERNAME and/or TWINE_PASSWORD not found in ~/.secrets. "
+            "Prompting for PyPI token/password."
+        )
+        password = getpass.getpass("Enter PyPI token/password: ").strip()
+        if not password:
+            raise ValueError("PyPI token/password is required for upload")
+
+        return username, password
 
     @staticmethod
     def get_version_components(version: str):
@@ -462,8 +519,12 @@ class PyPIReleaseTool:
 
         self.log("Uploading to PyPI...")
         assert self.temp_venv_path is not None
+        twine_username, twine_password = self._resolve_twine_credentials()
+        twine_env = os.environ.copy()
+        twine_env["TWINE_USERNAME"] = twine_username
+        twine_env["TWINE_PASSWORD"] = twine_password
         venv_twine = str(self.temp_venv_path / "bin" / "twine")
-        self.run_command([venv_twine, "upload", "dist/*"])
+        self.run_command([venv_twine, "upload", "dist/*"], env=twine_env)
         self.log(f"Successfully released {package_name} version {version} to PyPI!")
 
     def initialize_project_context(self) -> None:

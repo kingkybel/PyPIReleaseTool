@@ -3,11 +3,11 @@ __pycache__/
 *.egg-info/
 build/
 dist/
-.venv/
-venv/
+.venv*/
+venv*/
 .env
 *.log
 .pytest_cache/
 .mypy_cache/
 .idea/
-.zencoder/
+.zen*/
