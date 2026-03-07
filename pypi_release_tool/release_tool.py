@@ -410,12 +410,12 @@ class PyPIReleaseTool:
         self.log("Ensuring __init__.py has full functionality...")
 
         package_path = Path(self.package_dir)
-        init_file = package_path / "__init__.py"
+        init_file = package_path / PyPIReleaseTool.MODULE_INIT_FILE
 
         if not package_path.exists() or not package_path.is_dir():
             raise FileNotFoundError(f"Package directory {self.package_dir} not found")
 
-        py_files = [f for f in package_path.glob("*.py") if f.name != "__init__.py"]
+        py_files = [f for f in package_path.glob("*.py") if f.name != {PyPIReleaseTool.MODULE_INIT_FILE}]
         imports = [f"from .{py_file.stem} import *" for py_file in py_files]
 
         current_version = "0.1.0"
@@ -426,7 +426,7 @@ class PyPIReleaseTool:
 
         content = "\n".join(imports) + f"\n\n__version__ = \"{current_version}\"\n"
         init_file.write_text(content)
-        self.log("__init__.py updated with full functionality")
+        self.log(f"{PyPIReleaseTool.MODULE_INIT_FILE} updated with full functionality")
 
     def get_current_version(self) -> str:
         """Read the current package version from package `__init__.py`.
@@ -435,13 +435,13 @@ class PyPIReleaseTool:
         :raises FileNotFoundError: If package `__init__.py` is missing.
         :raises ValueError: If version assignment cannot be extracted.
         """
-        init_file = Path(self.package_dir) / "__init__.py"
+        init_file = Path(self.package_dir) / PyPIReleaseTool.MODULE_INIT_FILE
         if not init_file.exists():
-            raise FileNotFoundError(f"Cannot find {self.package_dir}/__init__.py")
+            raise FileNotFoundError(f"Cannot find {init_file}")
 
         match = re.search(r"__version__\s*=\s*[\"\']([^\"\']+)[\"\']", init_file.read_text())
         if not match:
-            raise ValueError(f"Could not extract version from {self.package_dir}/__init__.py")
+            raise ValueError(f"Could not extract version from {init_file}")
         return match.group(1)
 
     @staticmethod
@@ -477,7 +477,7 @@ class PyPIReleaseTool:
         :raises FileNotFoundError: If package `__init__.py` does not exist.
         :raises OSError: If file read/write operations fail.
         """
-        init_file = Path(self.package_dir) / "__init__.py"
+        init_file = Path(self.package_dir) / PyPIReleaseTool.MODULE_INIT_FILE
 
         content = init_file.read_text()
         content = re.sub(r"__version__\s*=\s*[\"\'][^\"\']*[\"\']", f'__version__ = "{new_version}"', content)
@@ -619,7 +619,7 @@ class PyPIReleaseTool:
         :raises ValueError: If metadata cannot be updated correctly.
         """
         self.ensure_full_functionality()
-        self.log(f"Updating version in {self.package_dir}/__init__.py...")
+        self.log(f"Updating version in {self.package_dir}/{PyPIReleaseTool.MODULE_INIT_FILE}...")
         self.update_version(new_version)
 
     def commit_and_push_changes(self) -> None:
