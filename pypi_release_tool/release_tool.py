@@ -370,12 +370,50 @@ class PyPIReleaseTool:
         with subprocess.Popen([str(temp_venv_dir / "bin" / "python")], stdin=subprocess.PIPE, text=True) as proc:
             subprocess.run(["curl", "-sS", "https://bootstrap.pypa.io/get-pip.py"], stdout=proc.stdin, check=True)
 
+        pip_env = os.environ.copy()
+        # Avoid reading/writing potentially corrupted global pip cache entries on host machines.
+        pip_env["PIP_NO_CACHE_DIR"] = "1"
+
         self.log("Installing project dependencies...")
-        self.run_command([str(temp_venv_dir / "bin" / "python"), "-m", "pip", "install", "-e", "."])
-        self.run_command([str(temp_venv_dir / "bin" / "python"), "-m", "pip", "install", "--quiet", "colorama"])
+        self.run_command(
+            [
+                str(temp_venv_dir / "bin" / "python"),
+                "-m",
+                "pip",
+                "install",
+                "--no-cache-dir",
+                "-e",
+                ".",
+            ],
+            env=pip_env,
+        )
+        self.run_command(
+            [
+                str(temp_venv_dir / "bin" / "python"),
+                "-m",
+                "pip",
+                "install",
+                "--quiet",
+                "--no-cache-dir",
+                "colorama",
+            ],
+            env=pip_env,
+        )
 
         self.log("Installing build tools...")
-        self.run_command([str(temp_venv_dir / "bin" / "python"), "-m", "pip", "install", "--quiet", "build", "twine"])
+        self.run_command(
+            [
+                str(temp_venv_dir / "bin" / "python"),
+                "-m",
+                "pip",
+                "install",
+                "--quiet",
+                "--no-cache-dir",
+                "build",
+                "twine",
+            ],
+            env=pip_env,
+        )
 
         return temp_venv_dir
 
